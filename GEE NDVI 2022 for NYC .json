@@ -1,0 +1,46 @@
+#Import Datasets
+#var imageCollection = ee.ImageCollection("LANDSAT/LC09/C02/T2_L2"),
+#    imageCollection2 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2");
+
+
+// Define NYC boundaries
+var nyc = ee.Geometry.Rectangle([-74.25909, 40.47739, -73.70001, 40.91617]);
+
+// Define a function to calculate NDVI
+function calculateNDVI(image) {
+  var ndvi = image.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI');
+  return image.addBands(ndvi);
+}
+
+// Load Landsat 8 Collection 2 Level-2 data
+var landsat8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+  .filterDate('2022-01-01', '2022-12-31')  // Full year 2022
+  .filterBounds(nyc)
+  .map(function(image) {
+    // Apply scaling factors for Landsat Collection 2 Level-2
+    var opticalBands = image.select(['SR_B.*']).multiply(0.0000275).add(-0.2);
+    var thermalBands = image.select(['ST_B.*']).multiply(0.00341802).add(149.0);
+    return image.addBands(opticalBands, null, true).addBands(thermalBands, null, true);
+  })
+  .map(calculateNDVI)
+  .select('NDVI');
+
+// Calculate median NDVI for the year
+var ndviMedian = landsat8.median();
+
+// Clip the NDVI image to NYC
+var ndviClip = ndviMedian.clip(nyc);
+
+// Display the NDVI map
+Map.centerObject(nyc, 10);
+Map.addLayer(ndviClip, {min: 0, max: 0.8, palette: ['red', 'yellow', 'green']}, 'NDVI 2022');
+
+// Export the NDVI map to Google Drive
+Export.image.toDrive({
+  image: ndviClip,
+  description: 'NYC_NDVI_2022',
+  scale: 30,
+  region: nyc,
+  fileFormat: 'GeoTIFF',
+  maxPixels: 1e9
+});
